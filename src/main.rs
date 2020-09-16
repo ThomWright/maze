@@ -254,29 +254,27 @@ impl fmt::Display for Maze {
 fn main() {
     // Get and lock the stdios so we don't have to get the lock all the time
     let stdout = io::stdout();
-    // let stdout = stdout.lock();
+    let stdout = stdout.lock();
     // let stdin = io::stdin();
     // let stdin = stdin.lock();
     // let stderr = io::stderr();
     // let mut stderr = stderr.lock();
 
-    let mut stdout = stdout.into_raw_mode().unwrap();
+    let stdout = stdout.into_raw_mode().unwrap();
 
-    let maze = Maze::new(2, 2);
-    write!(stdout, "{}", maze).unwrap();
+    {
+        let mut screen = AlternateScreen::from(stdout);
+        write!(screen, "{}", cursor::Goto(1, 1)).unwrap();
+        write!(screen, "Welcome to the alternate screen.\n\r\nPlease wait patiently until we arrive back at the main screen in a about three seconds.\n\r").unwrap();
+        write!(screen, "\n\r").unwrap();
 
-    // {
-    //     let mut screen = AlternateScreen::from(stdout);
-    //     write!(screen, "{}", cursor::Goto(1, 1)).unwrap();
-    //     write!(screen, "Welcome to the alternate screen.\n\r\nPlease wait patiently until we arrive back at the main screen in a about three seconds.\n\r").unwrap();
-    //     screen.flush().unwrap();
+        // let size = terminal_size().unwrap();
+        // let maze = Maze::new(size.0.into(), size.1.into());
+        let maze = Maze::new(16, 16);
+        write!(screen, "{}", maze).unwrap();
 
-    //     let size = terminal_size().unwrap();
+        screen.flush().unwrap();
 
-    //     // let maze = Maze::new(size.0.into(), size.1.into());
-    //     let maze = Maze::new(16, 16);
-    //     write!(screen, "{}", maze).unwrap();
-
-    //     thread::sleep(time::Duration::from_secs(10));
-    // }
+        thread::sleep(time::Duration::from_secs(5));
+    }
 }
