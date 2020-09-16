@@ -237,12 +237,14 @@ impl fmt::Display for Maze {
             }
             write!(f, "+\n\r")?;
             if let Some(v_row) = v.next() {
-                for &wall in v_row.iter().take(v_row.len() - 1) {
-                    write!(f, "{}", if wall { "|  " } else { "   " })?;
+                if let Some((&last, walls)) = v_row.split_last() {
+                    for &wall in walls {
+                        write!(f, "{}", if wall { "|  " } else { "   " })?;
+                    }
+                    write!(f, "{}", if last == true { "|" } else { " " })?;
                 }
-                write!(f, "|")?;
+                write!(f, "\n\r")?;
             }
-            write!(f, "\n\r")?;
         }
 
         fmt::Result::Ok(())
