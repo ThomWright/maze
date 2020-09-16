@@ -203,6 +203,11 @@ impl Maze {
             }
         }
 
+        // entrace and exit
+        let row = height / 2;
+        v_walls[row][0] = false;
+        v_walls[row][width] = false;
+
         Maze { v_walls, h_walls }
     }
 
