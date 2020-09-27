@@ -138,20 +138,23 @@ impl RandomCellGen {
 /// A cell `{x: 0, y: 1}` would access a vector like `vec[y][x]`, or `vec[1][0]`.
 #[derive(Debug)]
 struct Maze {
+    char_width: usize,
     h_walls: Vec<Vec<bool>>,
     v_walls: Vec<Vec<bool>>,
 }
 
 impl Maze {
+    fn new_from_char_size(width: usize, height: usize) -> Maze {
+        Maze::new_from_cell_size((width - 1) / 3, (height - 1) / 2)
+    }
+
     /// Use [Wilson's algorithm](https://en.wikipedia.org/wiki/Maze_generation_algorithm#Wilson's_algorithm) to generate a maze.
     ///
     /// # Arguments
     ///
     /// * `width` - number of cells wide
     /// * `height` - number of cells high
-    ///
-    /// The actual width/height in characters will be greater.
-    fn new(width: usize, height: usize) -> Maze {
+    fn new_from_cell_size(width: usize, height: usize) -> Maze {
         let mut rand_cell = RandomCellGen::new(width, height);
 
         let mut h_walls = Maze::create_grid(width, height + 1, true);
@@ -208,7 +211,11 @@ impl Maze {
         v_walls[row][0] = false;
         v_walls[row][width] = false;
 
-        Maze { v_walls, h_walls }
+        Maze {
+            v_walls,
+            h_walls,
+            char_width: (width * 3) + 1,
+        }
     }
 
     fn create_grid(width: usize, height: usize, value: bool) -> Vec<Vec<bool>> {
@@ -227,7 +234,6 @@ impl fmt::Display for Maze {
     /// +--+--+
     /// ```
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // FIXME: the ol' switcheroo
         let mut h = self.h_walls.iter();
         let mut v = self.v_walls.iter();
 
@@ -235,7 +241,13 @@ impl fmt::Display for Maze {
             for &wall in h_row {
                 write!(f, "{}", if wall { "+--" } else { "+  " })?;
             }
-            write!(f, "+\n\r")?;
+            write!(
+                f,
+                "+{}{}",
+                cursor::Down(1),
+                cursor::Left(self.char_width as u16)
+            )?;
+
             if let Some(v_row) = v.next() {
                 if let Some((&last, walls)) = v_row.split_last() {
                     for &wall in walls {
@@ -243,7 +255,12 @@ impl fmt::Display for Maze {
                     }
                     write!(f, "{}", if last == true { "|" } else { " " })?;
                 }
-                write!(f, "\n\r")?;
+                write!(
+                    f,
+                    "{}{}",
+                    cursor::Down(1),
+                    cursor::Left(self.char_width as u16)
+                )?;
             }
         }
 
@@ -264,17 +281,21 @@ fn main() {
 
     {
         let mut screen = AlternateScreen::from(stdout);
-        write!(screen, "{}", cursor::Goto(1, 1)).unwrap();
-        write!(screen, "Welcome to the alternate screen.\n\r\nPlease wait patiently until we arrive back at the main screen in a about three seconds.\n\r").unwrap();
-        write!(screen, "\n\r").unwrap();
 
-        // let size = terminal_size().unwrap();
-        // let maze = Maze::new(size.0.into(), size.1.into());
-        let maze = Maze::new(16, 16);
+        let size = terminal_size().unwrap();
+
+        write!(screen, "{}", cursor::Goto(2, 2)).unwrap();
+        let maze = Maze::new_from_char_size(
+            // -2 for a bit of space around the edges
+            Into::<usize>::into(size.0) - 2,
+            Into::<usize>::into(size.1) - 2,
+        );
         write!(screen, "{}", maze).unwrap();
+
+        write!(screen, "{}", cursor::Hide).unwrap();
 
         screen.flush().unwrap();
 
-        thread::sleep(time::Duration::from_secs(5));
+        thread::sleep(time::Duration::from_secs(10));
     }
 }
