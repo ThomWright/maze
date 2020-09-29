@@ -32,17 +32,17 @@ impl Distribution<Direction> for Standard {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-struct Cell {
+struct CellPosition {
     x: usize,
     y: usize,
 }
-impl Cell {
+impl CellPosition {
     /// Create a neighbor cell by moving in the direction given.
-    fn neighbor(&self, direction: &Direction, width: usize, height: usize) -> Option<Cell> {
+    fn neighbor(&self, direction: &Direction, width: usize, height: usize) -> Option<CellPosition> {
         match direction {
             Direction::N => {
                 if self.y > 0 {
-                    Some(Cell {
+                    Some(CellPosition {
                         x: self.x,
                         y: self.y - 1,
                     })
@@ -52,7 +52,7 @@ impl Cell {
             }
             Direction::S => {
                 if self.y + 1 < height {
-                    Some(Cell {
+                    Some(CellPosition {
                         x: self.x,
                         y: self.y + 1,
                     })
@@ -62,7 +62,7 @@ impl Cell {
             }
             Direction::E => {
                 if self.x + 1 < width {
-                    Some(Cell {
+                    Some(CellPosition {
                         x: self.x + 1,
                         y: self.y,
                     })
@@ -72,7 +72,7 @@ impl Cell {
             }
             Direction::W => {
                 if self.x > 0 {
-                    Some(Cell {
+                    Some(CellPosition {
                         x: self.x - 1,
                         y: self.y,
                     })
@@ -100,8 +100,8 @@ impl RandomCellGen {
     }
 
     /// Generate a random cell within the grid bounds.
-    fn cell(&mut self) -> Cell {
-        Cell {
+    fn cell(&mut self) -> CellPosition {
+        CellPosition {
             x: self.rng.gen_range(0, self.width),
             y: self.rng.gen_range(0, self.height),
         }
@@ -109,7 +109,7 @@ impl RandomCellGen {
 
     /// Generate a random cell next to the given cell, within the grid bounds,
     /// along with the direction we travelled to get there.
-    fn neighbor(&mut self, cell: Cell) -> (Cell, Direction) {
+    fn neighbor(&mut self, cell: CellPosition) -> (CellPosition, Direction) {
         let mut all_dirs: [Direction; 4] = [Direction::N, Direction::S, Direction::E, Direction::W];
         all_dirs.shuffle(&mut self.rng);
 
@@ -144,18 +144,26 @@ struct Maze {
     v_walls: Vec<Vec<bool>>,
 }
 
-impl Maze {
-    fn new_from_char_size(width: usize, height: usize) -> Maze {
-        Maze::new_from_cell_size((width - 1) / 3, (height - 1) / 2)
-    }
+enum MazeSize {
+    Chars {
+        width: usize,
+        height: usize,
+    },
+    #[allow(dead_code)]
+    Cells {
+        width: usize,
+        height: usize,
+    },
+}
 
+impl Maze {
     /// Use [Wilson's algorithm](https://en.wikipedia.org/wiki/Maze_generation_algorithm#Wilson's_algorithm) to generate a maze.
-    ///
-    /// # Arguments
-    ///
-    /// * `width` - number of cells wide
-    /// * `height` - number of cells high
-    fn new_from_cell_size(width: usize, height: usize) -> Maze {
+    fn new(size: MazeSize) -> Maze {
+        let (width, height) = match size {
+            MazeSize::Cells { width, height } => (width, height),
+            MazeSize::Chars { width, height } => ((width - 1) / 3, (height - 1) / 2),
+        };
+
         let mut rand_cell = RandomCellGen::new(width, height);
 
         let mut h_walls = Maze::create_grid(width, height + 1, true);
@@ -169,7 +177,7 @@ impl Maze {
             num_cells_visited += 1;
         }
 
-        let mut walk: HashMap<Cell, Direction> = HashMap::new();
+        let mut walk: HashMap<CellPosition, Direction> = HashMap::new();
 
         while num_cells_visited < width * height {
             // choose a starting point which hasn't been visited
@@ -285,12 +293,13 @@ fn main() {
 
         let size = terminal_size().unwrap();
 
-        write!(screen, "{}", cursor::Goto(2, 2)).unwrap();
-        let maze = Maze::new_from_char_size(
+        write!(screen, "{}", cursor::Goto(10, 10)).unwrap();
+
+        let maze = Maze::new(MazeSize::Chars {
             // -2 for a bit of space around the edges
-            Into::<usize>::into(size.0) - 2,
-            Into::<usize>::into(size.1) - 2,
-        );
+            width: Into::<usize>::into(size.0) - 2,
+            height: Into::<usize>::into(size.1) - 2,
+        });
         write!(screen, "{}", maze).unwrap();
 
         write!(screen, "{}", cursor::Hide).unwrap();
