@@ -5,7 +5,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io;
 use std::io::Write;
-use std::{thread, time};
+use termion::event::Key;
+use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 use termion::screen::AlternateScreen;
 use termion::{cursor, terminal_size};
@@ -272,8 +273,8 @@ fn main() {
     // Get and lock the stdios so we don't have to get the lock all the time
     let stdout = io::stdout();
     let stdout = stdout.lock();
-    // let stdin = io::stdin();
-    // let stdin = stdin.lock();
+    let stdin = io::stdin();
+    let stdin = stdin.lock();
     // let stderr = io::stderr();
     // let mut stderr = stderr.lock();
 
@@ -296,6 +297,11 @@ fn main() {
 
         screen.flush().unwrap();
 
-        thread::sleep(time::Duration::from_secs(10));
+        for c in stdin.keys() {
+            match c {
+                Ok(Key::Char('q')) => break,
+                _ => {}
+            }
+        }
     }
 }
