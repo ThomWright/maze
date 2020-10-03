@@ -161,23 +161,40 @@ enum MazeSizeUnit {
     #[allow(dead_code)]
     Cells,
 }
+impl MazeSizeUnit {
+    fn to_chars(&self, (width, height): (usize, usize)) -> (usize, usize) {
+        match self {
+            MazeSizeUnit::Cells => MazeSizeUnit::cell_to_char((width, height)),
+            MazeSizeUnit::Chars => {
+                // We might ask for a maze of size 5x5 chars, but we can only fit 1x2 cells
+                // which is 4x5 chars
+                MazeSizeUnit::cell_to_char(MazeSizeUnit::char_to_cell((width, height)))
+            }
+        }
+    }
+
+    fn to_cells(&self, (width, height): (usize, usize)) -> (usize, usize) {
+        match self {
+            MazeSizeUnit::Cells => (width, height),
+            MazeSizeUnit::Chars => MazeSizeUnit::char_to_cell((width, height)),
+        }
+    }
+
+    fn char_to_cell((width, height): (usize, usize)) -> (usize, usize) {
+        ((width - 1) / 3, (height - 1) / 2)
+    }
+
+    fn cell_to_char((width, height): (usize, usize)) -> (usize, usize) {
+        ((width * 3) + 1, (height * 2) + 1)
+    }
+}
 
 impl Maze {
     /// Use [Wilson's algorithm](https://en.wikipedia.org/wiki/Maze_generation_algorithm#Wilson's_algorithm) to generate a maze.
     fn new(size: Size, unit: MazeSizeUnit) -> Maze {
         let (width, height): (usize, usize) = (size.width.into(), size.height.into());
-        let (char_width, char_height) = match unit {
-            MazeSizeUnit::Cells => Maze::cell_to_char((width, height)),
-            MazeSizeUnit::Chars => {
-                // FIXME: make this more elegant
-                // reduce to actual char size
-                Maze::cell_to_char(Maze::char_to_cell((width, height)))
-            }
-        };
-        let (cells_wide, cells_high) = match unit {
-            MazeSizeUnit::Cells => (width, height),
-            MazeSizeUnit::Chars => Maze::char_to_cell((width, height)),
-        };
+        let (char_width, char_height) = unit.to_chars((width, height));
+        let (cells_wide, cells_high) = unit.to_cells((width, height));
         let mut rand_cell = RandomCellGen::new(cells_wide, cells_high);
         //
         // The inner Vectors are rows, to make rendering easier. It looks like:
@@ -257,20 +274,15 @@ impl Maze {
         }
     }
 
-    fn char_to_cell((width, height): (usize, usize)) -> (usize, usize) {
-        ((width - 1) / 3, (height - 1) / 2)
-    }
-
-    fn cell_to_char((width, height): (usize, usize)) -> (usize, usize) {
-        ((width * 3) + 1, (height * 2) + 1)
-    }
-
     fn create_grid(width: usize, height: usize, value: bool) -> Vec<Vec<bool>> {
         std::iter::repeat(std::iter::repeat(value).take(width).collect())
             .take(height)
             .collect()
     }
 
+    /// Draw the maze into `w`.
+    /// `term_size` is the size of the terminal represented by `w`.
+    /// `pos` is the position of the top-left corner of the maze within the terminal.
     fn draw<W: Write>(
         &self,
         w: &mut W,
@@ -298,7 +310,8 @@ impl Maze {
         Ok(())
     }
 
-    // TODO: https://scicomp.stackexchange.com/questions/26258/the-easiest-way-to-find-intersection-of-two-intervals
+    /// Determines which area of the maze is visible on screen when drawing to a
+    /// terminal of size `term_size`, with the top-left of the maze at `pos`.
     fn on_screen_area(&self, term_size: &Size, pos: &Position) -> Option<Area> {
         // convert maze position to terminal coordinates
         let offset_maze_x_s = pos.x;
@@ -388,11 +401,7 @@ fn main() {
             },
             MazeSizeUnit::Chars,
         );
-        // let pos = &Position { x: -3, y: -3 };
-        // let pos = &Position { x: 0, y: 0 };
-        // let pos = &Position { x: 1, y: 1 };
-        // let pos = &Position { x: 3, y: 3 };
-        let pos = &Position { x: 22, y: 22 };
+        let pos = &Position { x: 0, y: 0 };
         maze.draw(&mut screen, &size, &pos).unwrap();
 
         screen.flush().unwrap();
@@ -414,37 +423,43 @@ mod test {
 
     #[test]
     fn cell_to_char_1x1() {
-        let size = Maze::cell_to_char((1, 1));
+        let size = MazeSizeUnit::cell_to_char((1, 1));
         assert_eq!(size, (4, 3));
     }
 
     #[test]
     fn cell_to_char_2x2() {
-        let size = Maze::cell_to_char((2, 2));
+        let size = MazeSizeUnit::cell_to_char((2, 2));
         assert_eq!(size, (7, 5));
     }
 
     #[test]
     fn char_to_cell_4x3() {
-        let size = Maze::char_to_cell((4, 3));
+        let size = MazeSizeUnit::char_to_cell((4, 3));
         assert_eq!(size, (1, 1));
     }
     #[test]
     fn char_to_cell_5x4() {
-        let size = Maze::char_to_cell((5, 4));
+        let size = MazeSizeUnit::char_to_cell((5, 4));
         assert_eq!(size, (1, 1));
     }
 
     #[test]
     fn char_to_cell_6x4() {
-        let size = Maze::char_to_cell((6, 4));
+        let size = MazeSizeUnit::char_to_cell((6, 4));
         assert_eq!(size, (1, 1));
     }
 
     #[test]
     fn char_to_cell_7x5() {
-        let size = Maze::char_to_cell((7, 5));
+        let size = MazeSizeUnit::char_to_cell((7, 5));
         assert_eq!(size, (2, 2));
+    }
+
+    #[test]
+    fn maze_size_chars_to_chars() {
+        let size = MazeSizeUnit::Chars.to_chars((5, 5));
+        assert_eq!(size, (4, 5));
     }
 
     #[test]
