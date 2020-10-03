@@ -370,11 +370,10 @@ fn main() {
     let stdout = stdout.into_raw_mode().unwrap();
 
     {
-        let mut screen = AlternateScreen::from(stdout);
+        let screen = AlternateScreen::from(stdout);
+        let mut screen = cursor::HideCursor::from(screen);
         // let mut screen = stdout;
         // write!(screen, "{}", termion::clear::All).unwrap();
-
-        write!(screen, "{}", cursor::Hide).unwrap();
 
         let size = terminal_size().unwrap();
         let size = Size {
@@ -405,6 +404,8 @@ fn main() {
                 _ => {}
             }
         }
+
+        write!(screen, "{}", termion::style::Reset).unwrap();
     }
 }
 
