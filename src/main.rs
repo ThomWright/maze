@@ -2,14 +2,31 @@ use rand::distributions::{Distribution, Standard};
 use rand::seq::SliceRandom;
 use rand::{rngs::ThreadRng, thread_rng, Rng};
 use std::collections::HashMap;
-use std::fmt;
+use std::convert::TryInto;
 use std::io;
 use std::io::Write;
+use std::ops::Range;
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 use termion::screen::AlternateScreen;
 use termion::{cursor, terminal_size};
+
+#[derive(Debug, Clone)]
+struct Size {
+    width: usize,
+    height: usize,
+}
+#[derive(Debug, Clone)]
+struct Position {
+    x: isize,
+    y: isize,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Area {
+    width: Range<usize>,
+    height: Range<usize>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Direction {
@@ -125,50 +142,60 @@ impl RandomCellGen {
 
 /// A maze!
 ///
-/// The inner Vectors are rows, to make rendering easier. It looks like:
-///
-/// `vec[row][column]`
-///
-/// For, example a 2x2 grid:
+/// # Example output
 ///
 /// ```text
-/// 0: [0,1]
-/// 1: [0,1]
+/// +--+--+
+/// |  |  |
+/// +--+--+
 /// ```
-///
-/// A cell `{x: 0, y: 1}` would access a vector like `vec[y][x]`, or `vec[1][0]`.
 #[derive(Debug)]
 struct Maze {
+    buffer: Vec<char>,
     char_width: usize,
-    h_walls: Vec<Vec<bool>>,
-    v_walls: Vec<Vec<bool>>,
+    char_height: usize,
 }
 
-enum MazeSize {
-    Chars {
-        width: usize,
-        height: usize,
-    },
+enum MazeSizeUnit {
+    Chars,
     #[allow(dead_code)]
-    Cells {
-        width: usize,
-        height: usize,
-    },
+    Cells,
 }
 
 impl Maze {
     /// Use [Wilson's algorithm](https://en.wikipedia.org/wiki/Maze_generation_algorithm#Wilson's_algorithm) to generate a maze.
-    fn new(size: MazeSize) -> Maze {
-        let (width, height) = match size {
-            MazeSize::Cells { width, height } => (width, height),
-            MazeSize::Chars { width, height } => ((width - 1) / 3, (height - 1) / 2),
+    fn new(size: Size, unit: MazeSizeUnit) -> Maze {
+        let (width, height): (usize, usize) = (size.width.into(), size.height.into());
+        let (char_width, char_height) = match unit {
+            MazeSizeUnit::Cells => Maze::cell_to_char((width, height)),
+            MazeSizeUnit::Chars => {
+                // FIXME: make this more elegant
+                // reduce to actual char size
+                Maze::cell_to_char(Maze::char_to_cell((width, height)))
+            }
         };
-
-        let mut rand_cell = RandomCellGen::new(width, height);
-
-        let mut h_walls = Maze::create_grid(width, height + 1, true);
-        let mut v_walls = Maze::create_grid(width + 1, height, true);
-        let mut cells_visited = Maze::create_grid(width, height, false);
+        let (cells_wide, cells_high) = match unit {
+            MazeSizeUnit::Cells => (width, height),
+            MazeSizeUnit::Chars => Maze::char_to_cell((width, height)),
+        };
+        let mut rand_cell = RandomCellGen::new(cells_wide, cells_high);
+        //
+        // The inner Vectors are rows, to make rendering easier. It looks like:
+        //
+        // `vec[row][column]`
+        //
+        // For, example a 2x2 grid:
+        //
+        // ```text
+        // 0: [0,1]
+        // 1: [0,1]
+        // ```
+        //
+        // A cell `{x: 0, y: 1}` would access a vector like `vec[y][x]`, or `vec[1][0]`.
+        //
+        let mut h_walls = Maze::create_grid(cells_wide, cells_high + 1, true);
+        let mut v_walls = Maze::create_grid(cells_wide + 1, cells_high, true);
+        let mut cells_visited = Maze::create_grid(cells_wide, cells_high, false);
         let mut num_cells_visited = 0;
 
         {
@@ -179,7 +206,7 @@ impl Maze {
 
         let mut walk: HashMap<CellPosition, Direction> = HashMap::new();
 
-        while num_cells_visited < width * height {
+        while num_cells_visited < cells_wide * cells_high {
             // choose a starting point which hasn't been visited
             let mut init = rand_cell.cell();
             while cells_visited[init.y][init.x] {
@@ -205,7 +232,7 @@ impl Maze {
                         } else {
                             v_walls[c.y][c.x + if d == Direction::E { 1 } else { 0 }] = false;
                         }
-                        c = c.neighbor(&d, width, height).unwrap();
+                        c = c.neighbor(&d, cells_wide, cells_high).unwrap();
                     }
 
                     walk.clear();
@@ -216,15 +243,26 @@ impl Maze {
         }
 
         // entrace and exit
-        let row = height / 2;
+        let row = cells_high / 2;
         v_walls[row][0] = false;
-        v_walls[row][width] = false;
+        v_walls[row][cells_wide] = false;
+
+        let mut buffer = Vec::with_capacity(char_width * char_height);
+        Maze::draw_to_buffer(&h_walls, &v_walls, &mut buffer);
 
         Maze {
-            v_walls,
-            h_walls,
-            char_width: (width * 3) + 1,
+            buffer,
+            char_width,
+            char_height,
         }
+    }
+
+    fn char_to_cell((width, height): (usize, usize)) -> (usize, usize) {
+        ((width - 1) / 3, (height - 1) / 2)
+    }
+
+    fn cell_to_char((width, height): (usize, usize)) -> (usize, usize) {
+        ((width * 3) + 1, (height * 2) + 1)
     }
 
     fn create_grid(width: usize, height: usize, value: bool) -> Vec<Vec<bool>> {
@@ -232,48 +270,91 @@ impl Maze {
             .take(height)
             .collect()
     }
-}
 
-impl fmt::Display for Maze {
-    /// # Example output
-    ///
-    /// ```text
-    /// +--+--+
-    /// |  |  |
-    /// +--+--+
-    /// ```
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut h = self.h_walls.iter();
-        let mut v = self.v_walls.iter();
+    fn draw<W: Write>(
+        &self,
+        w: &mut W,
+        term_size: &Size,
+        pos: &Position,
+    ) -> std::result::Result<(), std::io::Error> {
+        // Goto is 1-based
+        let term_x = (pos.x + 1).max(1).try_into().unwrap();
+        let mut term_y = (pos.y + 1).max(1).try_into().unwrap();
+        write!(w, "{}", cursor::Goto(term_x, term_y))?;
+        if let Some(area) = self.on_screen_area(term_size, pos) {
+            for y in area.height {
+                for x in area.width.clone() {
+                    write!(
+                        w,
+                        "{}", //
+                        self.buffer[(y * self.char_width) + x]
+                    )?;
+                }
+                term_y += 1;
+                write!(w, "{}", cursor::Goto(term_x, term_y))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    // TODO: https://scicomp.stackexchange.com/questions/26258/the-easiest-way-to-find-intersection-of-two-intervals
+    fn on_screen_area(&self, term_size: &Size, pos: &Position) -> Option<Area> {
+        // convert maze position to terminal coordinates
+        let offset_maze_x_s = pos.x;
+        let offset_maze_x_e = pos.x + self.char_width as isize;
+        let offset_maze_y_s = pos.y;
+        let offset_maze_y_e = pos.y + self.char_height as isize;
+
+        if offset_maze_x_s > term_size.width as isize || 0 > offset_maze_x_e {
+            return None;
+        }
+        if offset_maze_y_s > term_size.height as isize || 0 > offset_maze_y_e {
+            return None;
+        }
+        let x_s = offset_maze_x_s.max(0);
+        let y_s = offset_maze_y_s.max(0);
+        let x_e = (term_size.width as isize).min(offset_maze_x_e);
+        let y_e = (term_size.height as isize).min(offset_maze_y_e);
+
+        // convert back to maze coordinates
+        Some(Area {
+            width: (x_s - pos.x) as usize..(x_e - pos.x) as usize,
+            height: (y_s - pos.y) as usize..(y_e - pos.y) as usize,
+        })
+    }
+
+    fn draw_to_buffer(h_walls: &Vec<Vec<bool>>, v_walls: &Vec<Vec<bool>>, buf: &mut Vec<char>) {
+        let mut h = h_walls.iter();
+        let mut v = v_walls.iter();
 
         while let Some(h_row) = h.next() {
             for &wall in h_row {
-                write!(f, "{}", if wall { "+--" } else { "+  " })?;
+                if wall {
+                    buf.extend_from_slice(&['+', '-', '-']);
+                } else {
+                    buf.extend_from_slice(&['+', ' ', ' ']);
+                }
             }
-            write!(
-                f,
-                "+{}{}",
-                cursor::Down(1),
-                cursor::Left(self.char_width as u16)
-            )?;
+            buf.push('+');
 
             if let Some(v_row) = v.next() {
                 if let Some((&last, walls)) = v_row.split_last() {
                     for &wall in walls {
-                        write!(f, "{}", if wall { "|  " } else { "   " })?;
+                        if wall {
+                            buf.extend_from_slice(&['|', ' ', ' ']);
+                        } else {
+                            buf.extend_from_slice(&[' ', ' ', ' ']);
+                        }
                     }
-                    write!(f, "{}", if last == true { "|" } else { " " })?;
+                    if last {
+                        buf.push('|');
+                    } else {
+                        buf.push(' ');
+                    }
                 }
-                write!(
-                    f,
-                    "{}{}",
-                    cursor::Down(1),
-                    cursor::Left(self.char_width as u16)
-                )?;
             }
         }
-
-        fmt::Result::Ok(())
     }
 }
 
@@ -290,19 +371,31 @@ fn main() {
 
     {
         let mut screen = AlternateScreen::from(stdout);
-
-        let size = terminal_size().unwrap();
-
-        write!(screen, "{}", cursor::Goto(10, 10)).unwrap();
-
-        let maze = Maze::new(MazeSize::Chars {
-            // -2 for a bit of space around the edges
-            width: Into::<usize>::into(size.0) - 2,
-            height: Into::<usize>::into(size.1) - 2,
-        });
-        write!(screen, "{}", maze).unwrap();
+        // let mut screen = stdout;
+        // write!(screen, "{}", termion::clear::All).unwrap();
 
         write!(screen, "{}", cursor::Hide).unwrap();
+
+        let size = terminal_size().unwrap();
+        let size = Size {
+            width: size.0.into(),
+            height: size.1.into(),
+        };
+
+        let maze = Maze::new(
+            Size {
+                // -2 for a bit of space around the edges
+                width: size.width,
+                height: size.height,
+            },
+            MazeSizeUnit::Chars,
+        );
+        // let pos = &Position { x: -3, y: -3 };
+        // let pos = &Position { x: 0, y: 0 };
+        // let pos = &Position { x: 1, y: 1 };
+        // let pos = &Position { x: 3, y: 3 };
+        let pos = &Position { x: 22, y: 22 };
+        maze.draw(&mut screen, &size, &pos).unwrap();
 
         screen.flush().unwrap();
 
@@ -312,5 +405,177 @@ fn main() {
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn cell_to_char_1x1() {
+        let size = Maze::cell_to_char((1, 1));
+        assert_eq!(size, (4, 3));
+    }
+
+    #[test]
+    fn cell_to_char_2x2() {
+        let size = Maze::cell_to_char((2, 2));
+        assert_eq!(size, (7, 5));
+    }
+
+    #[test]
+    fn char_to_cell_4x3() {
+        let size = Maze::char_to_cell((4, 3));
+        assert_eq!(size, (1, 1));
+    }
+    #[test]
+    fn char_to_cell_5x4() {
+        let size = Maze::char_to_cell((5, 4));
+        assert_eq!(size, (1, 1));
+    }
+
+    #[test]
+    fn char_to_cell_6x4() {
+        let size = Maze::char_to_cell((6, 4));
+        assert_eq!(size, (1, 1));
+    }
+
+    #[test]
+    fn char_to_cell_7x5() {
+        let size = Maze::char_to_cell((7, 5));
+        assert_eq!(size, (2, 2));
+    }
+
+    #[test]
+    fn on_screen_area_fits_inside() {
+        let maze_size = Size {
+            width: 5,
+            height: 5,
+        };
+        let term_size = Size {
+            width: 10,
+            height: 10,
+        };
+        let pos = Position { x: 0, y: 0 };
+
+        let maze = Maze::new(maze_size.clone(), MazeSizeUnit::Chars);
+        let area = maze.on_screen_area(&term_size, &pos);
+
+        assert_eq!(
+            area,
+            Some(Area {
+                width: 0..4,
+                height: 0..5
+            })
+        );
+    }
+
+    #[test]
+    fn on_screen_same_size() {
+        let maze_size = Size {
+            width: 10,
+            height: 10,
+        };
+        let term_size = Size {
+            width: 10,
+            height: 10,
+        };
+        let pos = Position { x: 0, y: 0 };
+
+        let maze = Maze::new(maze_size.clone(), MazeSizeUnit::Chars);
+        let area = maze.on_screen_area(&term_size, &pos);
+
+        assert_eq!(
+            area,
+            Some(Area {
+                width: 0..10,
+                height: 0..9
+            })
+        );
+    }
+
+    #[test]
+    fn on_screen_area_off_screen_to_right() {
+        let maze_size = Size {
+            width: 7,
+            height: 7,
+        };
+        let term_size = Size {
+            width: 10,
+            height: 10,
+        };
+        let pos = Position { x: 5, y: 0 };
+
+        let maze = Maze::new(maze_size, MazeSizeUnit::Chars);
+        let area = maze.on_screen_area(&term_size, &pos);
+
+        assert_eq!(
+            area,
+            Some(Area {
+                width: 0..5,
+                height: 0..7
+            })
+        );
+    }
+
+    #[test]
+    fn on_screen_area_completely_off_screen_to_right() {
+        let maze_size = Size {
+            width: 7,
+            height: 7,
+        };
+        let term_size = Size {
+            width: 10,
+            height: 10,
+        };
+        let pos = Position { x: 15, y: 0 };
+
+        let maze = Maze::new(maze_size, MazeSizeUnit::Chars);
+        let area = maze.on_screen_area(&term_size, &pos);
+
+        assert_eq!(area, None);
+    }
+
+    #[test]
+    fn on_screen_area_off_screen_to_left() {
+        let maze_size = Size {
+            width: 7,
+            height: 7,
+        };
+        let term_size = Size {
+            width: 10,
+            height: 10,
+        };
+        let pos = Position { x: -3, y: 0 };
+
+        let maze = Maze::new(maze_size, MazeSizeUnit::Chars);
+        let area = maze.on_screen_area(&term_size, &pos);
+
+        assert_eq!(
+            area,
+            Some(Area {
+                width: 3..7,
+                height: 0..7
+            })
+        );
+    }
+
+    #[test]
+    fn on_screen_area_completely_off_screen_to_left() {
+        let maze_size = Size {
+            width: 7,
+            height: 7,
+        };
+        let term_size = Size {
+            width: 10,
+            height: 10,
+        };
+        let pos = Position { x: -15, y: 0 };
+
+        let maze = Maze::new(maze_size, MazeSizeUnit::Chars);
+        let area = maze.on_screen_area(&term_size, &pos);
+
+        assert_eq!(area, None);
     }
 }
