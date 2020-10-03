@@ -383,7 +383,6 @@ fn main() {
 
         let maze = Maze::new(
             Size {
-                // -2 for a bit of space around the edges
                 width: size.width,
                 height: size.height,
             },
