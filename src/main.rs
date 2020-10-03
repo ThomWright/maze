@@ -593,4 +593,42 @@ mod test {
 
         assert_eq!(area, None);
     }
+
+    #[test]
+    fn maze_buffer_1x1() {
+        let mut buf = Vec::<char>::new();
+        Maze::draw_to_buffer(
+            &vec![vec![true], vec![true]],
+            &vec![vec![true, true]],
+            &mut buf,
+        );
+        assert_eq!(
+            buf,
+            vec![
+                '+', '-', '-', '+', //
+                '|', ' ', ' ', '|', //
+                '+', '-', '-', '+',
+            ]
+        );
+    }
+
+    #[test]
+    fn maze_buffer_2x2() {
+        let mut buf = Vec::<char>::new();
+        Maze::draw_to_buffer(
+            &vec![vec![true, true], vec![true, true], vec![true, true]],
+            &vec![vec![true, true, true], vec![true, true, true]],
+            &mut buf,
+        );
+        assert_eq!(
+            buf,
+            vec![
+                '+', '-', '-', '+', '-', '-', '+', //
+                '|', ' ', ' ', '|', ' ', ' ', '|', //
+                '+', '-', '-', '+', '-', '-', '+', //
+                '|', ' ', ' ', '|', ' ', ' ', '|', //
+                '+', '-', '-', '+', '-', '-', '+',
+            ]
+        );
+    }
 }
