@@ -23,17 +23,25 @@ struct Position {
     y: isize,
 }
 impl Position {
-    fn move_up(&mut self) {
-        self.y -= 1;
+    fn up(&self) -> Position {
+        let mut p = self.clone();
+        p.y -= 1;
+        p
     }
-    fn move_down(&mut self) {
-        self.y += 1;
+    fn down(&self) -> Position {
+        let mut p = self.clone();
+        p.y += 1;
+        p
     }
-    fn move_left(&mut self) {
-        self.x -= 1;
+    fn left(&self) -> Position {
+        let mut p = self.clone();
+        p.x -= 1;
+        p
     }
-    fn move_right(&mut self) {
-        self.x += 1;
+    fn right(&self) -> Position {
+        let mut p = self.clone();
+        p.x += 1;
+        p
     }
 }
 
@@ -155,22 +163,6 @@ impl RandomCellGen {
     }
 }
 
-/// A maze!
-///
-/// # Example output
-///
-/// ```text
-/// +--+--+
-/// |  |  |
-/// +--+--+
-/// ```
-#[derive(Debug)]
-struct Maze {
-    buffer: Vec<char>,
-    char_width: usize,
-    char_height: usize,
-}
-
 enum MazeSizeUnit {
     Chars,
     #[allow(dead_code)]
@@ -202,6 +194,22 @@ impl MazeSizeUnit {
     fn cell_to_char((width, height): (usize, usize)) -> (usize, usize) {
         ((width * 3) + 1, (height * 2) + 1)
     }
+}
+
+/// A maze!
+///
+/// # Example output
+///
+/// ```text
+/// +--+--+
+/// |  |  |
+/// +--+--+
+/// ```
+#[derive(Debug)]
+struct Maze {
+    buffer: Vec<char>,
+    char_width: usize,
+    char_height: usize,
 }
 
 impl Maze {
@@ -384,6 +392,34 @@ impl Maze {
             }
         }
     }
+
+    /// Given the maze is at `maze_pos`, is there a wall at `pos`?
+    fn is_wall(&self, maze_pos: &Position, pos: &Position) -> bool {
+        let x = pos.x - maze_pos.x;
+        let y = pos.y - maze_pos.y;
+
+        if x < 0 || y < 0 {
+            return false;
+        }
+        if x >= self.char_width as isize || y >= self.char_height as isize {
+            return false;
+        }
+
+        self.buffer[((y as usize * self.char_width) + x as usize) as usize] != ' '
+    }
+}
+
+fn draw_o<W: Write>(w: &mut W, pos: &Position) -> std::result::Result<(), std::io::Error> {
+    write!(
+        w,
+        "{}{}",
+        cursor::Goto(
+            (pos.x + 1).try_into().unwrap(),
+            (pos.y + 1).try_into().unwrap()
+        ),
+        "o"
+    )?;
+    Ok(())
 }
 
 fn main() {
@@ -392,21 +428,26 @@ fn main() {
     let stdout = stdout.lock();
     let stdin = io::stdin();
     let stdin = stdin.lock();
-    // let stderr = io::stderr();
-    // let mut stderr = stderr.lock();
 
     let stdout = stdout.into_raw_mode().unwrap();
 
     {
         let screen = AlternateScreen::from(stdout);
         let mut screen = cursor::HideCursor::from(screen);
-        // let mut screen = stdout;
-        // write!(screen, "{}", termion::clear::All).unwrap();
 
         let size = terminal_size().unwrap();
         let size = Size {
             width: size.0.into(),
             height: size.1.into(),
+        };
+
+        let o_pos = Position {
+            x: size.width as isize / 2,
+            y: size.height as isize / 2,
+        };
+        let mut maze_pos = Position {
+            x: o_pos.x + 1,
+            y: 0,
         };
 
         let maze = Maze::new(
@@ -416,40 +457,44 @@ fn main() {
             },
             MazeSizeUnit::Chars,
         );
-        let mut maze_pos = Position { x: 0, y: 0 };
-        maze.draw(&mut screen, &size, &maze_pos).unwrap();
 
+        maze.draw(&mut screen, &size, &maze_pos).unwrap();
+        draw_o(&mut screen, &o_pos).unwrap();
         screen.flush().unwrap();
 
         for c in stdin.keys() {
+            write!(screen, "{}", termion::clear::All).unwrap();
             match c {
                 Ok(Key::Char('q')) => break,
                 Ok(Key::Left) => {
-                    write!(screen, "{}", termion::clear::All).unwrap();
-                    maze_pos.move_left();
-                    maze.draw(&mut screen, &size, &maze_pos).unwrap();
-                    screen.flush().unwrap();
+                    let new_maze_pos = maze_pos.right();
+                    if !maze.is_wall(&new_maze_pos, &o_pos) {
+                        maze_pos = new_maze_pos;
+                    }
                 }
                 Ok(Key::Right) => {
-                    write!(screen, "{}", termion::clear::All).unwrap();
-                    maze_pos.move_right();
-                    maze.draw(&mut screen, &size, &maze_pos).unwrap();
-                    screen.flush().unwrap();
+                    let new_maze_pos = maze_pos.left();
+                    if !maze.is_wall(&new_maze_pos, &o_pos) {
+                        maze_pos = new_maze_pos;
+                    }
                 }
                 Ok(Key::Up) => {
-                    write!(screen, "{}", termion::clear::All).unwrap();
-                    maze_pos.move_up();
-                    maze.draw(&mut screen, &size, &maze_pos).unwrap();
-                    screen.flush().unwrap();
+                    let new_maze_pos = maze_pos.down();
+                    if !maze.is_wall(&new_maze_pos, &o_pos) {
+                        maze_pos = new_maze_pos;
+                    }
                 }
                 Ok(Key::Down) => {
-                    write!(screen, "{}", termion::clear::All).unwrap();
-                    maze_pos.move_down();
-                    maze.draw(&mut screen, &size, &maze_pos).unwrap();
-                    screen.flush().unwrap();
+                    let new_maze_pos = maze_pos.up();
+                    if !maze.is_wall(&new_maze_pos, &o_pos) {
+                        maze_pos = new_maze_pos;
+                    }
                 }
                 _ => {}
             }
+            maze.draw(&mut screen, &size, &maze_pos).unwrap();
+            draw_o(&mut screen, &o_pos).unwrap();
+            screen.flush().unwrap();
         }
 
         write!(screen, "{}", termion::style::Reset).unwrap();
