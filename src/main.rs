@@ -22,6 +22,21 @@ struct Position {
     x: isize,
     y: isize,
 }
+impl Position {
+    fn move_up(&mut self) {
+        self.y -= 1;
+    }
+    fn move_down(&mut self) {
+        self.y += 1;
+    }
+    fn move_left(&mut self) {
+        self.x -= 1;
+    }
+    fn move_right(&mut self) {
+        self.x += 1;
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Area {
     width: Range<usize>,
@@ -401,14 +416,38 @@ fn main() {
             },
             MazeSizeUnit::Chars,
         );
-        let pos = &Position { x: 0, y: 0 };
-        maze.draw(&mut screen, &size, &pos).unwrap();
+        let mut maze_pos = Position { x: 0, y: 0 };
+        maze.draw(&mut screen, &size, &maze_pos).unwrap();
 
         screen.flush().unwrap();
 
         for c in stdin.keys() {
             match c {
                 Ok(Key::Char('q')) => break,
+                Ok(Key::Left) => {
+                    write!(screen, "{}", termion::clear::All).unwrap();
+                    maze_pos.move_left();
+                    maze.draw(&mut screen, &size, &maze_pos).unwrap();
+                    screen.flush().unwrap();
+                }
+                Ok(Key::Right) => {
+                    write!(screen, "{}", termion::clear::All).unwrap();
+                    maze_pos.move_right();
+                    maze.draw(&mut screen, &size, &maze_pos).unwrap();
+                    screen.flush().unwrap();
+                }
+                Ok(Key::Up) => {
+                    write!(screen, "{}", termion::clear::All).unwrap();
+                    maze_pos.move_up();
+                    maze.draw(&mut screen, &size, &maze_pos).unwrap();
+                    screen.flush().unwrap();
+                }
+                Ok(Key::Down) => {
+                    write!(screen, "{}", termion::clear::All).unwrap();
+                    maze_pos.move_down();
+                    maze.draw(&mut screen, &size, &maze_pos).unwrap();
+                    screen.flush().unwrap();
+                }
                 _ => {}
             }
         }
